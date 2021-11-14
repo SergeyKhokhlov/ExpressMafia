@@ -9,7 +9,7 @@ import logging
 from random import choice
 
 logging.basicConfig(level=logging.INFO)
-bot = Bot(token="2073227161:AAEQcHMYsawinAZpM_0tJlAvyQ8Ggj-oJdc")
+bot = Bot(token=TOKEN)
 dp = Dispatcher(bot, storage=MemoryStorage())
 
 
