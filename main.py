@@ -9,7 +9,7 @@ import logging
 from random import choice
 
 logging.basicConfig(level=logging.INFO)
-bot = Bot(token=TOKEN)
+bot = Bot(token=token)
 dp = Dispatcher(bot, storage=MemoryStorage())
 
 
@@ -31,7 +31,7 @@ async def cmd_start(message: types.Message):
     user_search = session.query(users.User).filter(message.chat.id == users.User.message_id).all()
     if len(user_search) == 0:
         user = users.User(
-            nickname=(message.from_user.first_name + " " + message.from_user.last_name),
+            nickname=(message.from_user.first_name),
             message_id=message.chat.id, room="")
         session.add(user)
         session.commit()
@@ -43,11 +43,8 @@ async def cmd_start(message: types.Message):
                                       types.BotCommand("/update", "Обновить список комнат")])
         await message.answer("Список комнат:", reply_markup=take_all_rooms())
     else:
-        if isfounder(message):
-            await dp.bot.set_my_commands([types.BotCommand("/begin", "Начать игру"),
-                                          types.BotCommand("/exit", "Покинуть комнату")])
-        else:
-            await dp.bot.set_my_commands([types.BotCommand("/exit", "Покинуть комнату")])
+        await dp.bot.set_my_commands([types.BotCommand("/begin", "Начать игру"),
+                                      types.BotCommand("/exit", "Покинуть комнату")])
         await bot.send_message(message.chat.id, "Вы в комнате: " + str(user_search[0].room))
 
 
@@ -56,9 +53,9 @@ async def cmd_start(message: types.Message):
 @dp.message_handler(state=None, commands=['addroom'])
 async def addroom_name(message: types.Message):
     session = db_session.create_session()
-    user_search = session.query(users.User).filter(message.chat.id == users.User.message_id).all()
-    if len(user_search[0].room) != 0 and user_search[0].room is None:
-        await message.answer("Вы в комнате: " + str(user_search[0].room))
+    user_search = session.query(users.User).filter(message.chat.id == users.User.message_id).first()
+    if user_search.room != "":
+        await message.answer("Вы в комнате: " + str(user_search.room))
     else:
         await message.answer("Введите название комнаты", reply_markup=create_cancel_keyboard())
         await StatesClass.name_room.set()
@@ -374,7 +371,7 @@ async def don_check(message: types.Message, state: FSMContext):
                     with open("static/json/game.json", encoding="utf-8") as file:
                         data = json.loads(file.readline())
                     die_user = session.query(users.User).filter(users.User.id ==
-                                                                data[don_user.room]["die"]).first()
+                                                                data[user_don.room]["die"]).first()
                     await night_result(die_user.room, False, die_user)
                     await state.finish()
     else:
@@ -389,6 +386,9 @@ async def don_check(message: types.Message, state: FSMContext):
 @dp.message_handler(state=StatesClass.policeman)  # Функция для хода дона мафии
 async def don_mafia(message: types.Message, state: FSMContext):  # и начало хода комиссара
     session = db_session.create_session()
+    if not str(message.text).isdigit():
+        await message.answer("Такого игрока не существует.")
+        return
     don_user = session.query(users.User).filter(role_dropper(message, "mafia")[0] ==
                                                 users.User.id).first()
     take_policeman = session.query(users.User).filter(str(role_dropper(message, "all")[0])
@@ -397,6 +397,7 @@ async def don_mafia(message: types.Message, state: FSMContext):  # и начал
             == take_policeman.nickname:
         await bot.send_message(don_user.message_id, "Да")
     else:
+        print(all_users_dropper(message, True)[int(message.text[0]) - 1].split(". ")[1] + " " + take_policeman.nickname)
         await bot.send_message(don_user.message_id, "Нет")
     if role_dropper(message, "policeman") != "0":
         policeman_user = session.query(users.User).filter(str(role_dropper(message, "policeman")) ==
