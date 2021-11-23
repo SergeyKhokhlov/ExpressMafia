@@ -39,12 +39,8 @@ async def cmd_start(message: types.Message):
         await bot.send_message(message.chat.id, "Приветствуем Вас "
                                                 "в онлайн-помощнике для игры в мафию")
     if not isroom(message):
-        await dp.bot.set_my_commands([types.BotCommand("/addroom", "Создать комнату"),
-                                      types.BotCommand("/update", "Обновить список комнат")])
         await message.answer("Список комнат:", reply_markup=take_all_rooms())
     else:
-        await dp.bot.set_my_commands([types.BotCommand("/begin", "Начать игру"),
-                                      types.BotCommand("/exit", "Покинуть комнату")])
         await bot.send_message(message.chat.id, "Вы в комнате: " + str(user_search[0].room))
 
 
@@ -103,9 +99,6 @@ async def addroom_take_password_and_create_room(message: types.Message, state: F
         user = session.query(users.User).filter(founder == users.User.id).first()
         user.room = name
         session.commit()
-        if isfounder(message):
-            await dp.bot.set_my_commands([types.BotCommand("/begin", "Начать игру"),
-                                          types.BotCommand("/exit", "Покинуть комнату")])
     await state.finish()
 
 
@@ -126,8 +119,6 @@ async def exit_room(message: types.Message):
                     del data[user.room]
                 json.dump(data, file)
             clearing_db(room)
-            await dp.bot.set_my_commands([types.BotCommand("/addroom", "Создать комнату"),
-                                          types.BotCommand("/update", "Обновить список комнат")])
             await message.answer("Вы покинули комнату")
             await message.answer("Список комнат:", reply_markup=take_all_rooms())
         else:
@@ -173,11 +164,9 @@ async def join_room(message: types.Message, state: FSMContext):
                     if is_password:
                         session.commit()
         if is_password:
-            await bot.set_my_commands([types.BotCommand("/exit", "Покинуть комнату")])
             with open("static/json/game.json", "w", encoding="utf-8") as file:
                 data[room_name]["users"] = data[room_name]["users"] + [user.id]
                 json.dump(data, file)
-                await dp.bot.set_my_commands([types.BotCommand("/exit", "Покинуть комнату")])
                 line = "Вы в комнате: " + str(user.room)
         else:
             line = "Пароль не подходит."
@@ -192,10 +181,6 @@ async def begin(message: types.Message):
     if not isroom(message):
         await message.answer("Вы не в комнате!")
         return
-    if isfounder(message):
-        await dp.bot.set_my_commands([types.BotCommand("/night", "Запустить Ночь"),
-                                      types.BotCommand("/vote", "Запустить Голосование"),
-                                      types.BotCommand("/finish", "Закончить Игру")])
     session = db_session.create_session()
     user_search = session.query(users.User).filter(message.chat.id == users.User.message_id).first()
     with open("static/json/game.json", encoding="utf-8") as file:
