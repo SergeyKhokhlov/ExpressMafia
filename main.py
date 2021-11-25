@@ -282,6 +282,12 @@ async def night(message: types.Message):
     with open("static/json/game.json", encoding="utf-8") as file:
         data = json.loads(file.readline())
     mafia_names = []
+    if data[user_search.room]["isvote"] == 1:
+        await message.answer("Дневное голосование не завершено!")
+        return
+        # for i in data[user_search.room]["users"]:
+    #     take_user_info = session.query(users.User).filter(i == users.User.id).first()
+        # await bot.send_game(take_user_info.message_id, "AAMCBAADFQABYZ6UBUA0mpquT33IPrVs5rjgLqEAAjAGAAIeb-BROhqszbRVY28BAAdzAAMiBA")
     for i in data[user_search.room]["mafia"]:
         take_user = session.query(users.User).filter(i == users.User.id).first()
         mafia_names.append(take_user.nickname)
@@ -560,9 +566,18 @@ async def night_result(room, result, die_user):
 @dp.message_handler(commands=["vote"])  # Функция для голосования
 async def vote_day(message: types.Message, state: FSMContext):
     session = db_session.create_session()
+    with open("static/json/game.json", encoding="utf-8") as file:
+        data = json.loads(file.readline())
+    user = session.query(users.User).filter(message.chat.id == users.User.message_id).first()
+    if data[user.room]["isvote"] == 1:
+        await message.answer("Дневное голосование не завершено!")
+        return
     send = await bot.send_poll(message.chat.id, "Кого убьём сегодня?",
                                all_users_dropper(message, numerate=False),
                                is_anonymous=False)
+    with open("static/json/game.json", "w", encoding="utf-8") as file:
+        data[user.room]["isvote"] = 1
+        json.dump(data, file)
     for i in role_dropper(message, "users"):
         take_user = session.query(users.User).filter(i == users.User.id).first()
         if take_user.message_id != message.chat.id:
@@ -607,6 +622,11 @@ async def polls(message):
             if int(who_dead_2) < votes.count(i):
                 who_dead_2 = i
                 counter_2 = votes.count(i)
+        with open("static/json/game.json", encoding="utf-8") as file:
+            data = json.loads(file.readline())
+        with open("static/json/game.json", "w", encoding="utf-8") as file:
+            data[user.room]["isvote"] = 0
+            json.dump(data, file)
         if counter_1 == counter_2:
             for i in data[user.room]["users"]:
                 take_user = session.query(users.User).filter(i == users.User.id).first()
@@ -628,6 +648,7 @@ async def polls(message):
                     pass
             with open("static/json/game.json", "w", encoding="utf-8") as file:
                 data[user.room]["vote"] = []
+                data[user.room]["isvote"] = 0
                 json.dump(data, file)
                 file.close()
             with open("static/json/game.json", "w", encoding="utf-8") as file:
@@ -697,6 +718,9 @@ async def finish_game(message: types.Message, state: FSMContext):
     if data[user_room.room]["mafia"][0] == 0:
         await message.answer("Игра не начата!")
         return
+    if data[user_room.room]["isvote"] == 1:
+        await message.answer("Дневное голосование не завершено!")
+        return
     with open("static/json/game.json", "w", encoding="utf-8") as file:
         data[user_room.room]["mafia"] = [0]
         data[user_room.room]["policeman"] = 0
@@ -717,6 +741,13 @@ async def finish_game(message: types.Message, state: FSMContext):
 async def drop_commands(message):
     session = db_session.create_session()
     user_search = session.query(users.User).filter(message.chat.id == users.User.message_id).first()
+    session = db_session.create_session()
+    with open("static/json/game.json", encoding="utf-8") as file:
+        data = json.loads(file.readline())
+    user = session.query(users.User).filter(message.chat.id == users.User.message_id).first()
+    if data[user.room]["isvote"] == 1:
+        await message.answer("Голосуйте")
+        return
     if user_search.room == "":
         await message.answer("/addroom - Создание Комнаты\n/update - Обновить Список Комнат")
         return
@@ -749,6 +780,11 @@ def take_all_rooms():  # Возвращает inline-клавиатуру со �
 @dp.message_handler(content_types=['sticker'])  # Функция для принятия стикеров
 async def handle_sticker(msg):
     print(msg)
+
+
+@dp.message_handler(content_types=['game'])
+async def games_handler(message):
+    print(message)
 
 
 def create_cancel_keyboard():  # Возвращает клавиатуру с кнопкой "Отменить"
