@@ -9,7 +9,8 @@ import logging
 from random import choice
 
 logging.basicConfig(level=logging.INFO)
-bot = Bot(token=token)
+bot = Bot(token="2133529093:AAEonv7fGbAjc-o4I3UeHD_Yfa0fj1_uqVU")
+# bot = Bot(token="2073227161:AAG3daU3iR6GX7V4oBwGJVdkbvC3aGWOm9o")
 dp = Dispatcher(bot, storage=MemoryStorage())
 
 
@@ -29,9 +30,14 @@ class StatesClass(StatesGroup):  # Машина состояний
 async def cmd_start(message: types.Message):
     session = db_session.create_session()
     user_search = session.query(users.User).filter(message.chat.id == users.User.message_id).all()
-    if len(user_search) == 0:
-        user = users.User(nickname=(message.from_user.first_name),
-                          message_id=message.chat.id, room="")
+    if len(user_search) == 0:  # Запись в бд
+        try:
+            user = users.User(nickname=(message.from_user.first_name + " " +
+                                        message.from_user.last_name),
+                              message_id=message.chat.id, room="")
+        except Exception:
+            user = users.User(nickname=(message.from_user.first_name),
+                              message_id=message.chat.id, room="")
         session.add(user)
         session.commit()
     if message.text == "/start":
@@ -76,9 +82,10 @@ async def addroom_take_password_and_create_room(message: types.Message, state: F
         session = db_session.create_session()
         password = message.text
         await state.update_data(room_password=password)
-        await message.answer('Вы в комнате', reply_markup=types.ReplyKeyboardRemove())
         data = await state.get_data()
         name = data.get("room_name")
+        await message.answer("Вы в комнате " + "<b>" + name + "</b>",
+                             reply_markup=types.ReplyKeyboardRemove(), parse_mode="html")
         founder = session.query(users.User).filter(message.chat.id ==
                                                    users.User.message_id).first().id
         args = []
@@ -133,6 +140,7 @@ async def process_callback(call, state: FSMContext):
     if data[call.data]["mafia"][0] != 0:
         await bot.send_message(call.message.chat.id, "В комнате уже запущена игра!")
         return
+    await bot.answer_callback_query(call.id, "Не забудьте выключить звук 🔕", show_alert=True)
     await state.update_data(room_name=call.data)
     await bot.send_message(call.message.chat.id, "Введите пароль от комнаты",
                            reply_markup=create_cancel_keyboard())
@@ -230,8 +238,8 @@ async def begin(message: types.Message):
             else:
                 await bot.send_message(take_user.message_id, "Вам выпала роль <b>мафии</b>",
                                        parse_mode="html")
-                await bot.send_message(take_user.message_id, "Первый круг. Придумайте "
-                                                             "ситуацию и представьтесь.")
+            await bot.send_message(take_user.message_id, "Первый круг. Придумайте "
+                                                         "ситуацию и представьтесь.")
         except Exception:
             print(str(i) + " маф")
     for i in poor:
@@ -285,20 +293,27 @@ async def night(message: types.Message):
     if data[user_search.room]["isvote"] == 1:
         await message.answer("Дневное голосование не завершено!")
         return
-        # for i in data[user_search.room]["users"]:
-    #     take_user_info = session.query(users.User).filter(i == users.User.id).first()
-        # await bot.send_game(take_user_info.message_id, "AAMCBAADFQABYZ6UBUA0mpquT33IPrVs5rjgLqEAAjAGAAIeb-BROhqszbRVY28BAAdzAAMiBA")
+    for i in data[user_search.room]["users"]:
+        take_user_info = session.query(users.User).filter(i == users.User.id).first()
+        stickers = ["CAACAgIAAxkBAAIBn2GjDXxUBqvyibYcau6myewqbqjXAAJ-FQAC6NbiEkjdES0Nk4maIgQ",
+                    "CAACAgIAAxkBAAIBoGGjDeXG2AUO9T_LgIRFvU2ux4n8AAIOAQACVp29ChGpLWjCceBoIgQ",
+                    "CAACAgIAAxkBAAIBoWGjDmLI7luroK7mAAEGylZIlPGm6AACpAYAAmMr4gk38-fCvL8kOyIE",
+                    "CAACAgIAAxkBAAIBomGjDpg_7u-PsI07SxNn4w4z9js6AALAAgACVp29Cqa0tN1UgB8LIgQ"]
+        await bot.send_sticker(take_user_info.message_id, choice(stickers))
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("Играть", url="https://prizes.gamee.com/game/kAHVRl"))
+        await bot.send_message(take_user_info.message_id, "Город засыпает", reply_markup=markup)
     for i in data[user_search.room]["mafia"]:
         take_user = session.query(users.User).filter(i == users.User.id).first()
         mafia_names.append(take_user.nickname)
     for i in data[user_search.room]["mafia"]:
         take_user = session.query(users.User).filter(i == users.User.id).first()
         if len(mafia_names) > 1:
-            await bot.send_message(take_user.message_id, "Мафия: " +
+            await bot.send_message(take_user.message_id, "Просыпатся <b>мафия</b>: " +
                                    ", ".join(mafia_names), parse_mode="html")
         else:
-            await bot.send_message(take_user.message_id, "Мафия: " + mafia_names[0],
-                                   parse_mode="html")
+            await bot.send_message(take_user.message_id, "Просыпается <b>мафия</b> " +
+                                   mafia_names[0], parse_mode="html")
     who_dead = []
     n = 0
     for i in data[user_search.room]["users"]:
@@ -308,7 +323,8 @@ async def night(message: types.Message):
     for i in role_dropper(message, "mafia"):
         mafia_player = session.query(users.User).filter(users.User.id == i).first()
         await bot.send_message(mafia_player.message_id,
-                               ("Кого убьём сегодня?\n" + "\n".join(who_dead)))
+                               ("<b>Кого убьём сегодня?</b>\n" + "\n".join(who_dead)),
+                               parse_mode="html")
     for i in role_dropper(message, "mafia"):
         mafia_player = session.query(users.User).filter(users.User.id == i).first()
         state = dp.current_state(chat=mafia_player.message_id, user=mafia_player.message_id)
@@ -321,10 +337,10 @@ async def don_check(message: types.Message, state: FSMContext):
     if len(message.text) == 2 and message.text[0].isdigit() and message.text[1] == ".":
         if int(message.text[0]) <= len(role_dropper(message, "users")):
             user = session.query(users.User).filter(
-                users.User.nickname == all_users_dropper(message)[int(message.text[0]) -
-                                                                  1].split(". ")[1]).first()
+                users.User.nickname == all_users_dropper(message, numerate=False)[
+                    int(message.text[:-1]) - 1]).first()
             user_don = session.query(users.User).filter(
-                role_dropper(message, "mafia")[0] == users.User.id).first()
+                role_dropper(message, "don") == users.User.id).first()
             with open("static/json/game.json", encoding="utf-8") as file:
                 data = json.loads(file.readline())
             with open("static/json/game.json", "w", encoding="utf-8") as file:
@@ -332,9 +348,13 @@ async def don_check(message: types.Message, state: FSMContext):
                 json.dump(data, file)
                 file.close()
             if data[user.room]["don"] in data[user.room]["mafia"]:
-                await bot.send_message(user_don.message_id, ("Кто комиссар?\n" +
+                await bot.send_message(user_don.message_id, "Просыпается <b>дон мафии</b> " +
+                                       user_don.nickname,
+                                       parse_mode="html")
+                await bot.send_message(user_don.message_id, ("<b>Кто комиссар?</b>\n\n" +
                                                              "\n".join(
-                                                                 all_users_dropper(message, True))))
+                                                                 all_users_dropper(message, True))),
+                                       parse_mode="html")
                 await state.finish()
                 state = dp.current_state(chat=user_don.message_id, user=user_don.message_id)
                 await state.set_state(StatesClass.policeman)
@@ -343,8 +363,12 @@ async def don_check(message: types.Message, state: FSMContext):
                     policeman_user = session.query(users.User).filter(
                         str(role_dropper(message, "policeman")) ==
                         users.User.id).first()
-                    await bot.send_message(policeman_user.message_id, "Кто мафия?\n" +
-                                           "\n".join(all_users_dropper(message, True)))
+                    await bot.send_message(policeman_user.message_id, "Просыпается <b>комиссар</b> "
+                                           + policeman_user.nickname,
+                                           parse_mode="html")
+                    await bot.send_message(policeman_user.message_id, "<b>Кто мафия?</b>\n\n" +
+                                           "\n".join(all_users_dropper(message, True)),
+                                           parse_mode="html")
                     await state.finish()
                     state = dp.current_state(chat=policeman_user.message_id,
                                              user=policeman_user.message_id)
@@ -354,16 +378,20 @@ async def don_check(message: types.Message, state: FSMContext):
                         doc_user = session.query(users.User).filter(
                             str(role_dropper(message, "doctor")) ==
                             users.User.id).first()
-                        await bot.send_message(doc_user.message_id, "Кого лечим?\n" +
-                                               "\n".join(all_users_dropper(message)))
+                        await bot.send_message(doc_user.message_id, "Просыпается <b>доктор</b> " +
+                                               doc_user.nickname,
+                                               parse_mode="html")
+                        await bot.send_message(doc_user.message_id, "<b>Кого лечим?</b>\n\n" +
+                                               "\n".join(all_users_dropper(message)),
+                                               parse_mode="html")
                         await state.finish()
                         state = dp.current_state(chat=doc_user.message_id, user=doc_user.message_id)
                         await state.set_state(StatesClass.end_night)
                     else:
                         with open("static/json/game.json", encoding="utf-8") as file:
                             data = json.loads(file.readline())
-                        die_user = session.query(users.User).filter(users.User.id ==
-                                                                    data[user_don.room]["die"]).first()
+                        die_user = session.query(users.User).filter(
+                            users.User.id == data[user_don.room]["die"]).first()
                         await night_result(die_user.room, False, die_user)
                         await state.finish()
         else:
@@ -398,8 +426,11 @@ async def don_mafia(message: types.Message, state: FSMContext):  # и начал
     if role_dropper(message, "policeman") != "0":
         policeman_user = session.query(users.User).filter(str(role_dropper(message, "policeman")) ==
                                                           users.User.id).first()
-        await bot.send_message(policeman_user.message_id, "Кто мафия?\n" +
-                               "\n".join(all_users_dropper(message, True)))
+        await bot.send_message(policeman_user.message_id, "Просыпается <b>комиссар</b> " +
+                               policeman_user.nickname,
+                               parse_mode="html")
+        await bot.send_message(policeman_user.message_id, "<b>Кто мафия?</b>\n\n" +
+                               "\n".join(all_users_dropper(message, True)), parse_mode="html")
         await state.finish()
         state = dp.current_state(chat=policeman_user.message_id, user=policeman_user.message_id)
         await state.set_state(StatesClass.doctor)
@@ -407,8 +438,11 @@ async def don_mafia(message: types.Message, state: FSMContext):  # и начал
         if role_dropper(message, "doctor") != "0":
             doc_user = session.query(users.User).filter(str(role_dropper(message, "doctor")) ==
                                                         users.User.id).first()
-            await bot.send_message(doc_user.message_id, "Кого лечим?\n" +
-                                   "\n".join(all_users_dropper(message)))
+            await bot.send_message(doc_user.message_id, "Просыпается <b>доктор</b> "
+                                   + doc_user.nickname, parse_mode="html")
+            await bot.send_message(doc_user.message_id, "<b>Кого лечим?</b>\n\n" +
+                                   "\n".join(all_users_dropper(message)),
+                                   parse_mode="html")
             await state.finish()
             state = dp.current_state(chat=doc_user.message_id, user=doc_user.message_id)
             await state.set_state(StatesClass.end_night)
@@ -438,8 +472,11 @@ async def police(message: types.Message, state: FSMContext):
         if role_dropper(message, "doctor") != "0":
             doc_user = session.query(users.User).filter(str(role_dropper(message, "doctor")) ==
                                                               users.User.id).first()
-            await bot.send_message(doc_user.message_id, "Кого лечим?\n" +
-                                   "\n".join(all_users_dropper(message)))
+            await bot.send_message(doc_user.message_id, "Просыпается <b>доктор</b> " +
+                                   doc_user.nickname, parse_mode="html")
+            await bot.send_message(doc_user.message_id, "<b>Кого лечим?</b>\n\n" +
+                                   "\n".join(all_users_dropper(message)),
+                                   parse_mode="html")
             await state.finish()
             state = dp.current_state(chat=doc_user.message_id, user=doc_user.message_id)
             await state.set_state(StatesClass.end_night)
@@ -457,19 +494,21 @@ async def police(message: types.Message, state: FSMContext):
 @dp.message_handler(state=StatesClass.end_night)  # Функция для хода доктора и завершения ночи
 async def endNight(message: types.Message, state: FSMContext):
     session = db_session.create_session()
+    with open("static/json/game.json", encoding="utf-8") as file:
+        data = json.loads(file.readline())
     if message.text.isdigit() and len(role_dropper(message, "users")) >= int(message.text) > 0:
         user = session.query(users.User).filter(users.User.message_id == message.chat.id).first()
-        with open("static/json/game.json", encoding="utf-8") as file:
-            data = json.loads(file.readline())
-        if message.text != data[user.room]["help"]:
+        user_hill = session.query(users.User).filter(users.User.nickname == all_users_dropper(
+            message, numerate=False)[int(message.text) - 1]).first()
+        if user_hill.message_id != data[user.room]["help"]:
             with open("static/json/game.json", "w", encoding="utf-8") as file:
-                data[user.room]["help"] = message.text
+                data[user.room]["help"] = user_hill.message_id
                 json.dump(data, file)
                 file.close()
             result = False
             die_user = session.query(users.User).filter(users.User.id == data[user.room]["die"]).first()
             room = die_user.room
-            if str(data[user.room]["die"]) == message.text:
+            if die_user.message_id == user_hill.message_id:
                 result = True
             await night_result(room, result, die_user)
             await state.finish()
@@ -507,6 +546,7 @@ async def night_result(room, result, die_user):
                 print("Не Мж")
             json.dump(data, file)
         die_user.room = ""
+        file.close()
         session.commit()
     with open("static/json/game.json", encoding="utf-8") as file:
         data = json.loads(file.readline())
@@ -518,7 +558,7 @@ async def night_result(room, result, die_user):
                                    "8teL9m4FCOAjYiBA", "CAACAgEAAxkBAAIJOWGPpS9-lArV3aSszS"
                                                        "C-CvZdvULUAAIHAAOhBQwNcKYXLseMHYEiBA"]
             await bot.send_sticker(take_user.message_id, choice(stickers))
-            await bot.send_message(take_user.message_id, "Ночь закончилась. "
+            await bot.send_message(take_user.message_id, "Город просыпается. "
                                                          "Сегодня без потерь.")
         else:
             stickers = ["CAACAgEAAxkBAAIJIWGPnQABNzAxRok1GYz-5Iw3LRX6gQACBgADoQUMDUiEFCGKiN"
@@ -526,7 +566,7 @@ async def night_result(room, result, die_user):
                                  "kdDP2lNj5eRIgQ", "CAACAgIAAxkBAAIJNWGPo-vY7onaz5VY7Ane_lg"
                                                    "zvDZVAAKaEAACxpXRS5vXvdQx7K4cIgQ"]
             await bot.send_sticker(take_user.message_id, choice(stickers))
-            await bot.send_message(take_user.message_id, "Ночь закончилась. "
+            await bot.send_message(take_user.message_id, "Город просыпается. "
                                                          "Игрок <b>" + die_user.nickname +
                                    "</b> найден мертвым.", parse_mode="html")
             if die_user.message_id == take_user.message_id:
@@ -737,32 +777,36 @@ async def finish_game(message: types.Message, state: FSMContext):
     await state.finish()
 
 
-@dp.message_handler(commands=["help"])  # Функция для завершения игры
-async def drop_commands(message):
+@dp.message_handler(commands=["help"])  # Функция команды /help, которая выводит список остальных
+async def drop_commands(message):  # функций, которыми можно воспользоваться в момент вызова
     session = db_session.create_session()
     user_search = session.query(users.User).filter(message.chat.id == users.User.message_id).first()
     session = db_session.create_session()
     with open("static/json/game.json", encoding="utf-8") as file:
         data = json.loads(file.readline())
     user = session.query(users.User).filter(message.chat.id == users.User.message_id).first()
+    if user_search.room == "":
+        await message.answer("*Доступные Вам команды:*\n\n"
+                             "/addroom - Создать Комнату\n/update - Обновить Список Комнат\n\n"
+                             "_Не забудьте выключить звук 🔕_",
+                             parse_mode="markdown")
+        return
     if data[user.room]["isvote"] == 1:
         await message.answer("Голосуйте")
-        return
-    if user_search.room == "":
-        await message.answer("/addroom - Создание Комнаты\n/update - Обновить Список Комнат")
         return
     with open("static/json/game.json", encoding="utf-8") as file:
         data = json.loads(file.readline())
         if data[user_search.room]["mafia"][0] == 0:
-            await message.answer("<b>Доступные Вам команды:</b>\n\n"
-                                 "/begin - Начать Игру\n/exit - Покинуть Комнату",
-                                 parse_mode="html")
+            await message.answer("*Доступные Вам команды:*\n\n"
+                                 "/begin - Начать Игру\n/exit - Покинуть Комнату\n\n"
+                                 "_Не забудьте выключить звук 🔕_",
+                                 parse_mode="markdown")
             return
         else:
-            await message.answer("<b>Доступные Вам команды:</b>\n\n"
+            await message.answer("*Доступные Вам команды:*\n\n"
                                  "/night - Ночь\n/vote - Дневное Голосование\n"
-                                 "/finish - Завершить Игру",
-                                 parse_mode="html")
+                                 "/finish - Завершить Игру\n\n_Не забудьте выключить звук 🔕_",
+                                 parse_mode="markdown")
             return
 
 
@@ -785,6 +829,7 @@ async def handle_sticker(msg):
 @dp.message_handler(content_types=['game'])
 async def games_handler(message):
     print(message)
+    # await bot.forward_message(message.chat.id, message.chat.id, message.message_id)
 
 
 def create_cancel_keyboard():  # Возвращает клавиатуру с кнопкой "Отменить"
@@ -847,5 +892,6 @@ def isroom(message):  # Функция для проверки что челов
 
 
 if __name__ == "__main__":
+    # db_session.global_init("/home/tele/ExpressMafia/db/database.db")
     db_session.global_init("db/database.db")
     executor.start_polling(dp, skip_updates=True)
