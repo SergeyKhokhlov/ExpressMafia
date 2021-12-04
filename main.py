@@ -9,8 +9,7 @@ import logging
 from random import choice
 
 logging.basicConfig(level=logging.INFO)
-bot = Bot(token="2133529093:AAEonv7fGbAjc-o4I3UeHD_Yfa0fj1_uqVU")
-# bot = Bot(token="2073227161:AAG3daU3iR6GX7V4oBwGJVdkbvC3aGWOm9o")
+bot = Bot(token=token)
 dp = Dispatcher(bot, storage=MemoryStorage())
 
 
@@ -118,7 +117,13 @@ async def exit_room(message: types.Message):
         room = user.room
         with open("static/json/game.json", encoding="utf-8") as file:
             data = json.loads(file.readline())
+        users_list = data[room]["users"].copy()
         if data[user.room]["mafia"][0] == 0:
+            for i in users_list:
+                if i != user.id:
+                    take_user = session.query(users.User).filter(i == users.User.id).first()
+                    await bot.send_message(take_user.message_id, "Комната была удалена"
+                                                                 " администратором.")
             with open("static/json/game.json", "w", encoding="utf-8") as file:
                 x = data[user.room]["users"].remove(user.id)
                 if user.id == data[str(user.room)]["founder"]:
@@ -126,7 +131,10 @@ async def exit_room(message: types.Message):
                 json.dump(data, file)
             clearing_db(room)
             await message.answer("Вы покинули комнату")
-            await message.answer("Список комнат:", reply_markup=take_all_rooms())
+            for i in users_list:
+                take_user = session.query(users.User).filter(i == users.User.id).first()
+                await bot.send_message(take_user.message_id,
+                                       "Список комнат:", reply_markup=take_all_rooms())
         else:
             await message.answer("Сначала завершите игру!")
     else:
@@ -178,9 +186,23 @@ async def join_room(message: types.Message, state: FSMContext):
         else:
             line = "Пароль не подходит."
         await message.answer(line, reply_markup=types.ReplyKeyboardRemove())
+        for i in data[room_name]["users"]:
+            if i != user.id and is_password:
+                take_user = session.query(users.User).filter(i == users.User.id).first()
+                await bot.send_message(take_user.message_id,
+                                       ("<b>" + str(user.nickname) +
+                                        "</b> в комнате"),
+                                       reply_markup=types.ReplyKeyboardRemove(),
+                                       parse_mode="html")
         if not is_password:
             await message.answer("Список комнат:", reply_markup=take_all_rooms())
     await state.finish()
+
+
+@dp.message_handler(commands=["all"])  # Вывод всех игроков в комнате
+async def all_players(message: types.Message):
+    await message.answer(("<b>Игроки в комнате:</b>\n" + "\n".join(all_users_dropper(message))),
+                         parse_mode="html")
 
 
 @dp.message_handler(commands=["begin"])  # Функция для начала игры, выдачи карт
@@ -241,7 +263,7 @@ async def begin(message: types.Message):
             await bot.send_message(take_user.message_id, "Первый круг. Придумайте "
                                                          "ситуацию и представьтесь.")
         except Exception:
-            print(str(i) + " маф")
+            pass
     for i in poor:
         try:
             take_user = session.query(users.User).filter(i == users.User.id).first()
@@ -253,7 +275,7 @@ async def begin(message: types.Message):
             await bot.send_message(take_user.message_id, "Первый круг. Придумайте "
                                                          "ситуацию и представьтесь.")
         except Exception:
-            print(str(i) + " мж")
+            pass
     try:
         take_user = session.query(users.User).filter(doctor == users.User.id).first()
         await bot.send_sticker(take_user.message_id, "CAACAgIAAxkBAAIEgmGKxVuLXIgPc3-1FpluRp"
@@ -264,7 +286,7 @@ async def begin(message: types.Message):
         await bot.send_message(take_user.message_id, "Первый круг. Придумайте "
                                                      "ситуацию и представьтесь.")
     except Exception:
-        print(str(doctor) + " док")
+        pass
     try:
         take_user = session.query(users.User).filter(policeman == users.User.id).first()
         await bot.send_sticker(take_user.message_id, "CAACAgIAAxkBAAIEgmGKxVuLXIgPc3-1FpluRp"
@@ -275,7 +297,7 @@ async def begin(message: types.Message):
         await bot.send_message(take_user.message_id, "Первый круг. Придумайте "
                                                      "ситуацию и представьтесь.")
     except Exception:
-        print(str(policeman) + " ком")
+        pass
 
 
 # Ночь
@@ -284,6 +306,9 @@ async def begin(message: types.Message):
 async def night(message: types.Message):
     if not isroom(message):
         await message.answer("Вы не в комнате!")
+        return
+    if not isbegin(message):
+        await message.answer("Игра не начата!")
         return
     session = db_session.create_session()
     user_search = session.query(users.User).filter(message.chat.id == users.User.message_id).first()
@@ -351,7 +376,7 @@ async def don_check(message: types.Message, state: FSMContext):
                 await bot.send_message(user_don.message_id, "Просыпается <b>дон мафии</b> " +
                                        user_don.nickname,
                                        parse_mode="html")
-                await bot.send_message(user_don.message_id, ("<b>Кто комиссар?</b>\n\n" +
+                await bot.send_message(user_don.message_id, ("<b>Кто комиссар?</b>\n" +
                                                              "\n".join(
                                                                  all_users_dropper(message, True))),
                                        parse_mode="html")
@@ -366,7 +391,7 @@ async def don_check(message: types.Message, state: FSMContext):
                     await bot.send_message(policeman_user.message_id, "Просыпается <b>комиссар</b> "
                                            + policeman_user.nickname,
                                            parse_mode="html")
-                    await bot.send_message(policeman_user.message_id, "<b>Кто мафия?</b>\n\n" +
+                    await bot.send_message(policeman_user.message_id, "<b>Кто мафия?</b>\n" +
                                            "\n".join(all_users_dropper(message, True)),
                                            parse_mode="html")
                     await state.finish()
@@ -381,7 +406,7 @@ async def don_check(message: types.Message, state: FSMContext):
                         await bot.send_message(doc_user.message_id, "Просыпается <b>доктор</b> " +
                                                doc_user.nickname,
                                                parse_mode="html")
-                        await bot.send_message(doc_user.message_id, "<b>Кого лечим?</b>\n\n" +
+                        await bot.send_message(doc_user.message_id, "<b>Кого лечим?</b>\n" +
                                                "\n".join(all_users_dropper(message)),
                                                parse_mode="html")
                         await state.finish()
@@ -429,7 +454,7 @@ async def don_mafia(message: types.Message, state: FSMContext):  # и начал
         await bot.send_message(policeman_user.message_id, "Просыпается <b>комиссар</b> " +
                                policeman_user.nickname,
                                parse_mode="html")
-        await bot.send_message(policeman_user.message_id, "<b>Кто мафия?</b>\n\n" +
+        await bot.send_message(policeman_user.message_id, "<b>Кто мафия?</b>\n" +
                                "\n".join(all_users_dropper(message, True)), parse_mode="html")
         await state.finish()
         state = dp.current_state(chat=policeman_user.message_id, user=policeman_user.message_id)
@@ -440,7 +465,7 @@ async def don_mafia(message: types.Message, state: FSMContext):  # и начал
                                                         users.User.id).first()
             await bot.send_message(doc_user.message_id, "Просыпается <b>доктор</b> "
                                    + doc_user.nickname, parse_mode="html")
-            await bot.send_message(doc_user.message_id, "<b>Кого лечим?</b>\n\n" +
+            await bot.send_message(doc_user.message_id, "<b>Кого лечим?</b>\n" +
                                    "\n".join(all_users_dropper(message)),
                                    parse_mode="html")
             await state.finish()
@@ -474,7 +499,7 @@ async def police(message: types.Message, state: FSMContext):
                                                               users.User.id).first()
             await bot.send_message(doc_user.message_id, "Просыпается <b>доктор</b> " +
                                    doc_user.nickname, parse_mode="html")
-            await bot.send_message(doc_user.message_id, "<b>Кого лечим?</b>\n\n" +
+            await bot.send_message(doc_user.message_id, "<b>Кого лечим?</b>\n" +
                                    "\n".join(all_users_dropper(message)),
                                    parse_mode="html")
             await state.finish()
@@ -529,28 +554,29 @@ async def night_result(room, result, die_user):
             try:
                 x = data[room]["mafia"].remove(die_user.id)
             except Exception:
-                print("Не Мафия")
+                pass
             try:
                 if data[room]["doctor"] == die_user.id:
                     data[room]["doctor"] = "0"
             except Exception:
-                print("Не Док")
+                pass
             try:
                 if data[room]["policeman"] == die_user.id:
                     data[room]["policeman"] = "0"
             except Exception:
-                print("Не Ком")
+                pass
             try:
                 x = data[room]["poor"].remove(die_user.id)
             except Exception:
-                print("Не Мж")
+                pass
             json.dump(data, file)
         die_user.room = ""
-        file.close()
         session.commit()
+        file.close()
     with open("static/json/game.json", encoding="utf-8") as file:
         data = json.loads(file.readline())
-    for i in (data[room]["users"] + [data[room]["die"]]):
+    user_list = list(set(data[room]["users"] + [data[room]["die"]]))
+    for i in user_list:
         take_user = session.query(users.User).filter(i == users.User.id).first()
         if result:
             stickers = ["CAACAgIAAxkBAAIJNGGPodx0DWbTFjJ-yXt665iM4q26AALaBwACRvusBDMkEAZ6"
@@ -568,7 +594,7 @@ async def night_result(room, result, die_user):
             await bot.send_sticker(take_user.message_id, choice(stickers))
             await bot.send_message(take_user.message_id, "Город просыпается. "
                                                          "Игрок <b>" + die_user.nickname +
-                                   "</b> найден мертвым.", parse_mode="html")
+                                   "</b> найден мёртвым.", parse_mode="html")
             if die_user.message_id == take_user.message_id:
                 await bot.send_message(take_user.message_id,
                                        "Подписывайтесь на создателя бота: "
@@ -605,6 +631,9 @@ async def night_result(room, result, die_user):
 
 @dp.message_handler(commands=["vote"])  # Функция для голосования
 async def vote_day(message: types.Message, state: FSMContext):
+    if not isbegin(message):
+        await message.answer("Игра не начата!")
+        return
     session = db_session.create_session()
     with open("static/json/game.json", encoding="utf-8") as file:
         data = json.loads(file.readline())
@@ -696,21 +725,21 @@ async def polls(message):
                 try:
                     x = data[room]["mafia"].remove(die_user.id)
                 except Exception:
-                    print("Не Мафия")
+                    pass
                 try:
                     if data[room]["doctor"] == die_user.id:
                         data[room]["doctor"] = "0"
                 except Exception:
-                    print("Не Док")
+                    pass
                 try:
                     if data[room]["policeman"] == die_user.id:
                         data[room]["policeman"] = "0"
                 except Exception:
-                    print("Не Ком")
+                    pass
                 try:
                     x = data[room]["poor"].remove(die_user.id)
                 except Exception:
-                    print("Не Мж")
+                    pass
                 json.dump(data, file)
                 file.close()
             die_user.room = ""
@@ -774,6 +803,8 @@ async def finish_game(message: types.Message, state: FSMContext):
     for i in role_dropper(message, "users"):
         user = session.query(users.User).filter(users.User.id == i).first()
         await bot.send_message(user.message_id, "Игра завершена")
+        await bot.send_message(user.message_id, "Подписывайтесь на создателя бота: "
+                                                "https://instagram.com/khokhl0v.s")
     await state.finish()
 
 
@@ -798,14 +829,16 @@ async def drop_commands(message):  # функций, которыми можно
         data = json.loads(file.readline())
         if data[user_search.room]["mafia"][0] == 0:
             await message.answer("*Доступные Вам команды:*\n\n"
-                                 "/begin - Начать Игру\n/exit - Покинуть Комнату\n\n"
+                                 "/begin - Начать Игру\n/exit - Покинуть Комнату\n"
+                                 "/all - Список Игроков\n\n"
                                  "_Не забудьте выключить звук 🔕_",
                                  parse_mode="markdown")
             return
         else:
             await message.answer("*Доступные Вам команды:*\n\n"
                                  "/night - Ночь\n/vote - Дневное Голосование\n"
-                                 "/finish - Завершить Игру\n\n_Не забудьте выключить звук 🔕_",
+                                 "/finish - Завершить Игру\n/all - Список Игроков"
+                                 "\n\n_Не забудьте выключить звук 🔕_",
                                  parse_mode="markdown")
             return
 
@@ -891,7 +924,16 @@ def isroom(message):  # Функция для проверки что челов
     return True
 
 
+def isbegin(message):
+    session = db_session.create_session()
+    user = session.query(users.User).filter(users.User.message_id == message.chat.id).first()
+    with open("static/json/game.json", encoding="utf-8") as file:
+        data = json.loads(file.readline())
+    if data[user.room]["mafia"][0] == 0:
+        return False
+    return True
+
+
 if __name__ == "__main__":
-    # db_session.global_init("/home/tele/ExpressMafia/db/database.db")
     db_session.global_init("db/database.db")
     executor.start_polling(dp, skip_updates=True)
